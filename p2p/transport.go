@@ -15,4 +15,6 @@ type Peer interface {
 // between peers in the network, this could be tcp, udp, ftp, websockets, ....
 type Transport interface {
 	ListenAndAccept(ctx context.Context) (err error)
+	Consume() <-chan *Message
+	Close()
 }

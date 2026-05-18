@@ -7,5 +7,3 @@ var (
 )
 
 type HandshakeFn func(Peer) error
-
-func NoOpHandshake(_ Peer) error { return nil }
