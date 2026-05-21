@@ -10,6 +10,10 @@ import (
 
 func TestSimpleStorage(t *testing.T) {
 	root := utilCreateRoot()
+	defer func() {
+		assert.Nil(t, root.Close())
+		assert.Nil(t, os.RemoveAll("./storage_dump/"))
+	}()
 
 	params := SimpleStoreParam{
 		PathTransformFunc: CASPathTransform,
@@ -17,16 +21,20 @@ func TestSimpleStorage(t *testing.T) {
 	}
 	store := NewSimpleStorage(params)
 
-	err := store.StramStore("hi", strings.NewReader("hi"))
+	path, err := store.StramStore("hi", strings.NewReader("hi"))
+	if(err!=nil){
+		panic(err)
+	}
 	assert.Nil(t, err)
+	assert.Equal(t, len(strings.Split(path, "/")), 5)
 }
 
 func utilCreateRoot() *os.Root {
-	err := os.MkdirAll("./storage/", os.ModePerm)
+	err := os.MkdirAll("./storage_dump/", os.ModePerm)
 	if err != nil {
 		panic(err)
 	}
-	root, err := os.OpenRoot("./storage/")
+	root, err := os.OpenRoot("./storage_dump/")
 	if err != nil {
 		panic(err)
 	}

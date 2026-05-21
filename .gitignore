@@ -44,3 +44,5 @@ __debug_bin*
 
 # docker volumes data
 docker-volumes/
+
+storage_dump/

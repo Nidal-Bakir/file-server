@@ -1,9 +1,15 @@
 package storage
 
 import (
+	"crypto/sha3"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
+
+	"github.com/google/uuid"
 )
 
 type SimpleStoreParam struct {
@@ -19,24 +25,58 @@ func NewSimpleStorage(params SimpleStoreParam) Storage {
 	return &SimpleStorage{SimpleStoreParam: params}
 }
 
-func (s SimpleStorage) StramStore(key string, r io.Reader) error {
+func (s SimpleStorage) StramStore(key string, r io.Reader) (string, error) {
 	path := s.PathTransformFunc(key)
 	if err := s.RootDir.MkdirAll(path, os.ModePerm); err != nil {
-		return err
+		return "", err
 	}
 
-	fileName := fmt.Sprint(path, string(os.PathSeparator), "some_name.txt")
-	f, err := s.RootDir.OpenFile(fileName, os.O_CREATE|os.O_WRONLY, os.ModePerm)
+	oldFileName := fmt.Sprint(path, string(os.PathSeparator), uuid.New().String())
+	file, err := s.RootDir.OpenFile(oldFileName, os.O_CREATE|os.O_WRONLY, os.ModePerm)
 	if err != nil {
-		return err
+		return "", err
 	}
 
-	n, err := io.Copy(f, r)
+	buf := make([]byte, 1000)
+	var byteCount = 0
+	sha := sha3.New256()
+	for {
+		n, err := r.Read(buf)
+		byteCount += n
+		s := buf[:n]
+		if err == nil && n != 0 {
+			sha.Write(s)
+			file.Write(s)
+			continue
+		}
+		if n != 0 {
+			sha.Write(s)
+			file.Write(s)
+			continue
+		}
+		if errors.Is(err, io.EOF) || n == 0 {
+			break
+		}
+		return "", err
+	}
+
+	var out [32]byte
+	sha.Sum(out[:0])
+	hexFileName := hex.EncodeToString(out[:])
+	dir := filepath.Dir(oldFileName)
+	newFileName := filepath.Clean(
+		fmt.Sprint(
+			dir,
+			string(os.PathSeparator),
+			hexFileName,
+		),
+	)
+	err = s.RootDir.Rename(oldFileName, newFileName)
 	if err != nil {
-		return err
+		return "", err
 	}
 
-	fmt.Printf("written new file to disk wiht path %s, and using %d bytes \n", fileName, n)
+	fmt.Printf("written new file to disk wiht path %s, and using %d bytes \n", newFileName, byteCount)
 
-	return nil
+	return newFileName, nil
 }
