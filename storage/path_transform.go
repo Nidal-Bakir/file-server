@@ -5,16 +5,26 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
-type PathTransformFunc func(string) string
-
-func PlanePathTransform(key string) string {
-	return key
+type ContentPath struct {
+	Dir      string
+	FileName string
 }
 
-func CASPathTransform(key string) string {
+func (c ContentPath) FullPath() string {
+	return filepath.Join(c.Dir, c.FileName)
+}
+
+type PathTransformFunc func(string) ContentPath
+
+func PlanePathTransform(key string) ContentPath {
+	return ContentPath{Dir: key, FileName: key}
+}
+
+func CASPathTransform(key string) ContentPath {
 	sha := sha3.Sum256([]byte(key))
 	hexStr := hex.EncodeToString(sha[:])
 
@@ -23,7 +33,7 @@ func CASPathTransform(key string) string {
 	bucketSize := l / levels
 	remanningItems := l % levels
 	pathSlice := make([]string, levels)
-	
+
 	for i := range levels {
 		from, to := i*bucketSize, (i*bucketSize)+bucketSize
 		pathSlice[i] = hexStr[from:to]
@@ -31,7 +41,9 @@ func CASPathTransform(key string) string {
 	if remanningItems != 0 {
 		pathSlice[levels-1] = fmt.Sprint(pathSlice[levels-1], hexStr[l-remanningItems:l])
 	}
-	
-	casPath := strings.Join(pathSlice, string(os.PathSeparator))
-	return casPath
+
+	return ContentPath{
+		Dir:      strings.Join(pathSlice, string(os.PathSeparator)),
+		FileName: hexStr,
+	}
 }
