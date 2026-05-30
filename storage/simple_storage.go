@@ -6,6 +6,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path/filepath"
 )
 
 type SimpleStoreParam struct {
@@ -21,7 +22,7 @@ func NewSimpleStorage(params SimpleStoreParam) Storage {
 	return &SimpleStorage{SimpleStoreParam: params}
 }
 
-func (s SimpleStorage) StramStore(key string, r io.Reader) error {
+func (s SimpleStorage) StreamStore(key string, r io.Reader) error {
 	path := s.PathTransformFunc(key)
 	if err := s.RootDir.MkdirAll(path.Dir, os.ModePerm); err != nil {
 		return err
@@ -60,14 +61,21 @@ func (s SimpleStorage) Has(key string) bool {
 }
 
 func (s *SimpleStorage) Clear() error {
-	err := s.RootDir.Close()
+	entries, err := os.ReadDir(s.RootDir.Name())
 	if err != nil {
 		return err
 	}
-	err = os.RemoveAll(s.RootDir.Name())
-	if err != nil {
-		return err
+
+	for _, entry := range entries {
+		path := filepath.Join(s.RootDir.Name(), entry.Name())
+		if err := os.RemoveAll(path); err != nil {
+			return err
+		}
 	}
-	s.RootDir, err = createRoot()
-	return err
+
+	return nil
+}
+
+func (s *SimpleStorage) Close() error {
+	return s.RootDir.Close()
 }

@@ -76,8 +76,8 @@ func testUtilsCreateTcpTransport(decoder Decoder) *TcpTransport {
 				fmt.Println("ctx done for consume in main")
 				return
 
-			case msg := <-tt.Consume():
-				if msg == nil {
+			case msg, ok := <-tt.Consume():
+				if !ok || msg == nil {
 					return
 				}
 				fmt.Printf("new message from chan %+v\n", msg)

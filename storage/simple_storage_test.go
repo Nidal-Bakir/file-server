@@ -7,24 +7,26 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Nidal-Bakir/file-server/utils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestStramStore(t *testing.T) {
 	key := "some_key_dummy"
-	store, closer := utilGetStorage(t)
-	defer closer()
-	err := store.StramStore(key, strings.NewReader("hi"))
+	store := utilGetStorage(t)
+	defer teardown(t, store)
+	err := store.StreamStore(key, strings.NewReader("hi"))
 	assert.Nil(t, err)
 }
 
 func TestStramRead(t *testing.T) {
 	key := "some_key_dummy"
 	expectedFileBytes := []byte("hi")
-	store, closer := utilGetStorage(t)
-	defer closer()
-	err := store.StramStore(key, bytes.NewReader(expectedFileBytes))
+	store := utilGetStorage(t)
+	defer teardown(t, store)
+
+	err := store.StreamStore(key, bytes.NewReader(expectedFileBytes))
 	require.NoError(t, err)
 
 	readerCloser, err := store.StreamRead(key)
@@ -40,9 +42,10 @@ func TestStramRead(t *testing.T) {
 func TestDelete(t *testing.T) {
 	key := "some_key_dummy"
 	expectedFileBytes := []byte("hi")
-	store, closer := utilGetStorage(t)
-	defer closer()
-	err := store.StramStore(key, bytes.NewReader(expectedFileBytes))
+	store := utilGetStorage(t)
+	defer teardown(t, store)
+
+	err := store.StreamStore(key, bytes.NewReader(expectedFileBytes))
 	require.NoError(t, err)
 
 	err = store.Delete(key)
@@ -54,19 +57,19 @@ func TestDelete(t *testing.T) {
 }
 
 func TestClear(t *testing.T) {
-	store, closer := utilGetStorage(t)
-	defer closer()
+	store := utilGetStorage(t)
 	assert.NoError(t, store.Clear())
+	assert.NoError(t, store.Close())
 }
 
 func TestHas(t *testing.T) {
-	store, closer := utilGetStorage(t)
-	defer closer()
+	store := utilGetStorage(t)
+	defer teardown(t, store)
 
 	key := "some_key_dummy"
 	assert.False(t, store.Has(key))
 
-	err := store.StramStore(key, strings.NewReader("hi"))
+	err := store.StreamStore(key, strings.NewReader("hi"))
 	require.NoError(t, err)
 	assert.True(t, store.Has(key))
 
@@ -75,25 +78,24 @@ func TestHas(t *testing.T) {
 	assert.False(t, store.Has(key))
 }
 
-func utilGetStorage(t *testing.T) (*SimpleStorage, func()) {
-	root, rootCloser := utilCreateRoot(t)
+func utilGetStorage(t *testing.T) *SimpleStorage {
+	root := utilCreateRoot(t)
 	params := SimpleStoreParam{
 		PathTransformFunc: CASPathTransform,
 		RootDir:           root,
 	}
 	store := NewSimpleStorage(params).(*SimpleStorage)
-	closer := func() {
-		rootCloser()
-	}
-	return store, closer
+	return store
 }
 
-func utilCreateRoot(t *testing.T) (*os.Root, func()) {
-	root, err := createRoot()
-	assert.NoError(t, err)
-	closer := func() {
-		assert.NoError(t, root.Close())
-		assert.NoError(t, os.RemoveAll("./storage_dump/"))
-	}
-	return root, closer
+func utilCreateRoot(t *testing.T) *os.Root {
+	root, err := utils.OpenRoot("./storage_dump/")
+	require.NoError(t, err)
+	return root
+}
+
+func teardown(t *testing.T, store *SimpleStorage) {
+	assert.NoError(t, store.Clear())
+	assert.NoError(t, store.Close())
+	assert.NoError(t, os.RemoveAll(store.RootDir.Name()))
 }

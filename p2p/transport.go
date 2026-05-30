@@ -2,12 +2,17 @@ package p2p
 
 import (
 	"context"
+	"io"
 	"net"
 )
 
 // Peer is an interface that represent the remote node
 type Peer interface {
-	Conn() net.Conn
+	io.ReadWriteCloser
+	RemoteAddr() net.Addr
+
+	// Outbound peer (we dialed and acquired the connection) => true
+	// Inbound peer (we accepted the connection) => false
 	IsOutBound() bool
 }
 
@@ -16,5 +21,6 @@ type Peer interface {
 type Transport interface {
 	ListenAndAccept(ctx context.Context) (err error)
 	Consume() <-chan *Message
-	Close()
+	Close() error
+	Dial(addr string) error
 }

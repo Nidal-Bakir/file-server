@@ -10,16 +10,17 @@ import (
 
 type TcpTransportParams struct {
 	ListenerAddress string
-	Shakehands      HandshakeFn
 	Decoder         Decoder
-	OnNewPeer       func(Peer) error
+
+	Handshake HandshakeFn
+	OnPeer  func(Peer) error
 }
 
 type TcpTransport struct {
 	TcpTransportParams
 
 	listener   net.Listener
-	consumChan chan *Message
+	consumeChan chan *Message
 	closeChan  chan struct{}
 }
 
@@ -27,17 +28,18 @@ func NewTcpTransport(params TcpTransportParams) Transport {
 	return &TcpTransport{
 		TcpTransportParams: params,
 		closeChan:          make(chan struct{}),
-		consumChan:         make(chan *Message),
+		consumeChan:         make(chan *Message),
 	}
 }
 
 func (t *TcpTransport) Consume() <-chan *Message {
-	return t.consumChan
+	return t.consumeChan
 }
 
-func (t *TcpTransport) Close() {
-	t.consumChan <- nil
-	t.closeChan <- struct{}{}
+func (t *TcpTransport) Close() error {
+	close(t.consumeChan)
+	close(t.closeChan)
+	return nil
 }
 
 func (t *TcpTransport) ListenAndAccept(ctx context.Context) (err error) {
@@ -46,6 +48,15 @@ func (t *TcpTransport) ListenAndAccept(ctx context.Context) (err error) {
 		return err
 	}
 	return t.startAcceptLoop(ctx)
+}
+
+func (t *TcpTransport) Dial(addr string) error {
+	conn, err := net.Dial("tcp", addr)
+	if err != nil {
+		return err
+	}
+	go t.handleTcpConnection(conn, true)
+	return nil
 }
 
 func (t *TcpTransport) startAcceptLoop(ctx context.Context) error {
@@ -65,41 +76,41 @@ func (t *TcpTransport) startAcceptLoop(ctx context.Context) error {
 				fmt.Printf("tcp: error can not accept new connection, err: %v\n", err)
 				return err
 			}
-			go t.handleTcpConnection(con)
+			go t.handleTcpConnection(con, false)
 		}
 	}
 }
 
-func (t *TcpTransport) handleTcpConnection(conn net.Conn) {
-	peer := NewTcpPeerFromAccept(conn)
-	if t.OnNewPeer != nil {
-		if err := t.OnNewPeer(peer); err != nil {
-			peer.Conn().Write([]byte(err.Error()))
-			peer.Conn().Close()
+func (t *TcpTransport) handleTcpConnection(conn net.Conn, isOutBound bool) {
+	peer := NewTcpPeer(conn, isOutBound)
+	if t.OnPeer != nil {
+		if err := t.OnPeer(peer); err != nil {
+			peer.Write([]byte(err.Error()))
+			peer.Close()
 			return
 		}
 	}
 
-	if t.Shakehands != nil {
-		if err := t.Shakehands(peer); err != nil {
-			peer.Conn().Write([]byte(fmt.Sprintln(ErrInvalidHandshake.Error())))
-			peer.Conn().Close()
+	if t.Handshake != nil {
+		if err := t.Handshake(peer); err != nil {
+			peer.Write([]byte(fmt.Sprintln(ErrInvalidHandshake.Error())))
+			peer.Close()
 			return
 		}
 	}
 
-	fmt.Printf("new connection accepted and hundled. RemoteAddr:%s \n", peer.Conn().RemoteAddr().String())
+	fmt.Printf("new connection accepted and hundled. RemoteAddr:%s \n", peer.RemoteAddr().String())
 
 	msg := new(Message)
-	msg.From = peer.Conn().RemoteAddr()
+	msg.From = peer.RemoteAddr()
 	for {
-		err := t.Decoder.Decode(peer.Conn(), msg)
+		err := t.Decoder.Decode(peer, msg)
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				break
 			}
 			fmt.Printf("error from tcp decoder, err: %v\n", err)
 		}
-		t.consumChan <- msg
+		t.consumeChan <- msg
 	}
 }
